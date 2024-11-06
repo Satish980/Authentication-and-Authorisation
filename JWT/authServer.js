@@ -3,28 +3,47 @@ require("dotenv").config();
 const express = require("express");
 const app = express();
 const jwt = require("jsonwebtoken");
+const bcrypt = require("bcrypt");
+const fs = require("fs");
 
 app.use(express.json());
 
+function readUsers() {
+  const data = fs.readFileSync("./database/users.json");
+  return JSON.parse(data);
+}
+
 let refreshTokens = [];
+const users = readUsers();
 
 function generateAccessToken(user) {
   const accessToken = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, {
-    expiresIn: "15s",
+    expiresIn: "5m",
   });
   return accessToken;
 }
 
-app.post("/login", (req, res) => {
+app.post("/login", async (req, res) => {
   const username = req.body.username;
-  const user = { name: username };
-
-  // to generate access tokens in env variables used below command
-  // require('crypto').randomBytes(64).toString('hex') in node
-  const accessToken = generateAccessToken(user);
-  const refreshToken = jwt.sign(user, process.env.REFRESH_TOKEN_SECRET);
-  refreshTokens.push(refreshToken);
-  res.json({ accessToken, refreshToken });
+  const user = users.find((user) => user.username === username);
+  if (user === null) {
+    return res.status(400).send("Cannot find user");
+  }
+  try {
+    if (await bcrypt.compare(req.body.password, user.password)) {
+      // to generate access tokens in env variables used below command
+      // require('crypto').randomBytes(64).toString('hex') in node
+      const accessToken = generateAccessToken(user);
+      const refreshToken = jwt.sign(user, process.env.REFRESH_TOKEN_SECRET);
+      refreshTokens.push(refreshToken);
+      res.json({ accessToken, refreshToken, message: "Login success" });
+    } else {
+      res.status(500).send("Not allowed");
+    }
+  } catch (e) {
+    console.log("Exception in login:: ", e);
+    res.sendStatus(500);
+  }
 });
 
 // generating new token based on refresh token
